@@ -27,6 +27,16 @@ func NewChatRoom() *ChatRoom {
 }
 
 func (cr *ChatRoom) ListenForMessages() {
+	// create a goroutine where ListenForMessages works
+	go func() {
+		for {
+			select {
+			case cu := <-cr.joins:
+				cr.users[cu.username] = cu
+				cr.BroadCast("*** " + cu.username + " just joined the chatroom")
+			}
+		}
+	}()
 }
 
 func (cr *ChatRoom) Logout(username string) {
@@ -51,6 +61,9 @@ func (cr *ChatRoom) Join(conn net.Conn) {
 }
 
 func (cr *ChatRoom) BroadCast(msg string) {
+	for _, user := range cr.users {
+		user.Send(msg)
+	}
 }
 
 type ChatUser struct {
@@ -76,6 +89,18 @@ func (cu *ChatUser) ReadIncomingMessages(chatroom *ChatRoom) {
 }
 
 func (cu *ChatUser) WriteOutgoingMessages(chatroom *ChatRoom) {
+	go func() {
+		for {
+			// read from outgoing channel
+			msg := <-cu.outgoing
+
+			// add a newline to this msg
+			msg += "\n"
+
+			// write the message to the socket
+			cu.WriteString(msg)
+		}
+	}()
 }
 
 func (cu *ChatUser) Login(chatroom *ChatRoom) error {
@@ -101,6 +126,9 @@ func (cu *ChatUser) Login(chatroom *ChatRoom) error {
 
 	// write back to the socket
 	cu.WriteString(fmt.Sprintf("Welcome, %s\n", cu.username))
+
+	// call WriteOutGoingMessages
+	cu.WriteOutgoingMessages(chatroom)
 
 	return nil
 }
@@ -129,6 +157,7 @@ func (cu *ChatUser) WriteString(msg string) error {
 }
 
 func (cu *ChatUser) Send(msg string) {
+	cu.outgoing <- msg
 }
 
 func (cu *ChatUser) Close() {
