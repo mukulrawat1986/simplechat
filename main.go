@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"log"
 	"net"
 	"os"
@@ -8,11 +9,20 @@ import (
 
 // ChatRoom handles the data for a chatroom
 type ChatRoom struct {
+	users       map[string]*ChatUser
+	incoming    chan string
+	joins       chan *ChatUser
+	disconnects chan string
 }
 
-// NewChatRoom will create an empty chatroom type
+// NewChatRoom will create a new chatroom type
 func NewChatRoom() *ChatRoom {
-	return &ChatRoom{}
+	return &ChatRoom{
+		users:       make(map[string]*ChatUser),
+		incoming:    make(chan string),
+		joins:       make(chan *ChatUser),
+		disconnects: make(chan string),
+	}
 }
 
 func (cr *ChatRoom) ListenForMessages() {
@@ -28,10 +38,22 @@ func (cr *ChatRoom) BroadCast(msg string) {
 }
 
 type ChatUser struct {
+	conn       net.Conn
+	disconnect bool
+	username   string
+	outgoing   chan string
+	reader     *bufio.Reader
+	writer     *bufio.Writer
 }
 
 func NewChatUser(conn net.Conn) *ChatUser {
-	return &ChatUser{}
+	return &ChatUser{
+		conn:       conn,
+		disconnect: false,
+		outgoing:   make(chan string),
+		reader:     bufio.NewReader(conn),
+		writer:     bufio.NewWriter(conn),
+	}
 }
 
 func (cu *ChatUser) ReadIncomingMessages(chatroom *ChatRoom) {
