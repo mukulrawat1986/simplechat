@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net"
+	"os"
 )
 
 // ChatRoom handles the data for a chatroom
@@ -65,4 +66,31 @@ func (cu *ChatUser) Close() {
 
 func main() {
 	log.Println("Chat server starting!")
+
+	// create a TCP listener on port 6677
+	listener, err := net.Listen("tcp", ":6677")
+
+	if err != nil {
+		log.Fatalf("Error when listening on port 6677 : %s", err)
+		os.Exit(1)
+	}
+
+	// create a new instance of the chatroom using NewChatRoom()
+	chatroom := NewChatRoom()
+
+	// start listening for messages
+	chatroom.ListenForMessages()
+
+	// Loop and listen for accepted connections on port 6677
+	for {
+		// wait for the next call and return a connection
+		conn, err := listener.Accept()
+
+		if err != nil {
+			log.Fatalf("Error when accepting connection: %s", err)
+			os.Exit(1)
+		}
+
+		log.Printf("Remote address is: %s\n", conn.RemoteAddr())
+	}
 }
