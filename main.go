@@ -34,12 +34,23 @@ func (cr *ChatRoom) ListenForMessages() {
 			case cu := <-cr.joins:
 				cr.users[cu.username] = cu
 				cr.BroadCast("*** " + cu.username + " just joined the chatroom")
+
+			case msg := <-cr.incoming:
+				cr.BroadCast(msg)
+
+			case username := <-cr.disconnects:
+				if cr.users[username] != nil {
+					cr.users[username].Close()
+					delete(cr.users, username)
+					cr.BroadCast("*** " + username + " has disconnected")
+				}
 			}
 		}
 	}()
 }
 
 func (cr *ChatRoom) Logout(username string) {
+	cr.disconnects <- username
 }
 
 func (cr *ChatRoom) Join(conn net.Conn) {
@@ -86,6 +97,21 @@ func NewChatUser(conn net.Conn) *ChatUser {
 }
 
 func (cu *ChatUser) ReadIncomingMessages(chatroom *ChatRoom) {
+	go func() {
+		for {
+			msg, err := cu.ReadLine()
+			if cu.disconnect {
+				break
+			}
+			if err != nil {
+				log.Fatalf("Error when reading from socket: %s", err)
+				chatroom.Logout(cu.username)
+				break
+			}
+			msg = "[" + cu.username + "] " + msg
+			chatroom.incoming <- msg
+		}
+	}()
 }
 
 func (cu *ChatUser) WriteOutgoingMessages(chatroom *ChatRoom) {
@@ -94,11 +120,19 @@ func (cu *ChatUser) WriteOutgoingMessages(chatroom *ChatRoom) {
 			// read from outgoing channel
 			msg := <-cu.outgoing
 
+			if cu.disconnect {
+				break
+			}
+
 			// add a newline to this msg
 			msg += "\n"
 
 			// write the message to the socket
-			cu.WriteString(msg)
+			err := cu.WriteString(msg)
+			if err != nil {
+				chatroom.Logout(cu.username)
+				break
+			}
 		}
 	}()
 }
@@ -127,9 +161,9 @@ func (cu *ChatUser) Login(chatroom *ChatRoom) error {
 	// write back to the socket
 	cu.WriteString(fmt.Sprintf("Welcome, %s\n", cu.username))
 
-	// call WriteOutGoingMessages
+	// start the goroutines
 	cu.WriteOutgoingMessages(chatroom)
-
+	cu.ReadIncomingMessages(chatroom)
 	return nil
 }
 
@@ -161,6 +195,8 @@ func (cu *ChatUser) Send(msg string) {
 }
 
 func (cu *ChatUser) Close() {
+	cu.disconnect = true
+	cu.conn.Close()
 }
 
 // main will create a socket, bind to port 6677,
