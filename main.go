@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -32,6 +33,21 @@ func (cr *ChatRoom) Logout(username string) {
 }
 
 func (cr *ChatRoom) Join(conn net.Conn) {
+
+	// create a new ChatUser object
+	chatuser := NewChatUser(conn)
+
+	// Login the user, by calling the ChatUser.Login method on this
+	// object
+	err := chatuser.Login(cr)
+	if err != nil {
+		log.Fatalf("Error when logging in the user: %s", err)
+		return
+	}
+
+	// notifies of a new user by putting the newly created ChatUser
+	// object on the joins channel
+	cr.joins <- chatuser
 }
 
 func (cr *ChatRoom) BroadCast(msg string) {
@@ -63,14 +79,52 @@ func (cu *ChatUser) WriteOutgoingMessages(chatroom *ChatRoom) {
 }
 
 func (cu *ChatUser) Login(chatroom *ChatRoom) error {
+
+	// write the banner message
+	cu.WriteString("Welcome to Mukul's chat server!\n")
+
+	// Print to the socket
+	cu.WriteString("Please enter your username: ")
+
+	// read the username from the socket
+	str, err := cu.ReadLine()
+	if err != nil {
+		log.Fatalf("Error while reading from socket: %s", err)
+		return err
+	}
+
+	// store the read username
+	cu.username = str
+
+	// log the connected user
+	log.Println("User logged in: ", cu.username)
+
+	// write back to the socket
+	cu.WriteString(fmt.Sprintf("Welcome, %s\n", cu.username))
+
 	return nil
 }
 
 func (cu *ChatUser) ReadLine() (string, error) {
-	return "", nil
+	line, _, err := cu.reader.ReadLine()
+	if err != nil {
+		log.Fatalf("Error while reading a line: %s", err)
+		return "", err
+	}
+	return string(line), nil
 }
 
 func (cu *ChatUser) WriteString(msg string) error {
+	_, err := cu.writer.WriteString(msg)
+	if err != nil {
+		log.Fatalf("Error while writing the string to buffer: %s", err)
+		return err
+	}
+	err = cu.writer.Flush()
+	if err != nil {
+		log.Fatalf("Error while writing to connection %s", err)
+		return err
+	}
 	return nil
 }
 
@@ -114,5 +168,7 @@ func main() {
 		}
 
 		log.Printf("Remote address is: %s\n", conn.RemoteAddr())
+
+		go chatroom.Join(conn)
 	}
 }
